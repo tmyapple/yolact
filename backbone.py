@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import pickle
+import math
+from pycls.models.regnet import RegNet
+from pycls.core.config import _C
 
 from collections import OrderedDict
 
@@ -158,13 +161,252 @@ class ResNetBackbone(nn.Module):
         self._make_layer(block, conv_channels // block.expansion, blocks=depth, stride=downsample)
 
 
+def conv3x3_block(in_channels,
+                  out_channels,
+                  stride=1,
+                  padding=1,
+                  dilation=1,
+                  groups=1,
+                  bias=False,
+                  use_bn=True,
+                  bn_eps=1e-5,
+                  activation=(lambda: nn.ReLU(inplace=True))):
+    return ConvBlock(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=3,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        groups=groups,
+        bias=bias,
+        use_bn=use_bn,
+        bn_eps=bn_eps,
+        activation=activation)
+
+
+def conv1x1_block(in_channels,
+                  out_channels,
+                  stride=1,
+                  padding=0,
+                  groups=1,
+                  bias=False,
+                  use_bn=True,
+                  bn_eps=1e-5,
+                  activation=(lambda: nn.ReLU(inplace=True))):
+    return ConvBlock(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=1,
+        stride=stride,
+        padding=padding,
+        groups=groups,
+        bias=bias,
+        use_bn=use_bn,
+        bn_eps=bn_eps,
+        activation=activation)
+
+
+class ConvBlock(nn.Module):
+    def __init__(self,
+                in_channels,
+                out_channels,
+                kernel_size,
+                stride,
+                padding,
+                dilation=1,
+                groups=1,
+                bias=False,
+                use_bn=True,
+                bn_eps=1e-5,
+                activation=(lambda: nn.ReLU(inplace=True))):
+        super(ConvBlock, self).__init__()
+        self.activate = (activation is not None)
+        self.use_bn = use_bn
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+                              stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        if self.use_bn:
+            self.bn = nn.BatchNorm2d(num_features=out_channels, eps=bn_eps)
+        if self.activate:
+            self.activ = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.use_bn:
+            x = self.bn(x)
+        if self.activate:
+            x = self.activ(x)
+        return x
+
+
+class ResNeXtBottleneck(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 stride,
+                 cardinality,
+                 bottleneck_width,
+                 bottleneck_factor=4):
+        super(ResNeXtBottleneck, self).__init__()
+        mid_channels = out_channels // bottleneck_factor
+        D = int(math.floor(mid_channels * (bottleneck_width / 64.0)))
+        group_width = cardinality * D
+        self.conv1 = conv1x1_block(in_channels=in_channels, out_channels=group_width)
+        self.conv2 = conv3x3_block(in_channels=group_width, out_channels=group_width, stride=stride, groups=cardinality)
+        self.conv3 = conv1x1_block(in_channels=group_width, out_channels=out_channels, activation=None)
+
+    def forward(self, x):
+         x = self.conv1(x)
+         x = self.conv2(x)
+         x = self.conv3(x)
+         return x
+
+class ResNeXtUnit(nn.Module):
+    def __init__(self, in_channels, out_channels, stride, cardinality, bottleneck_width):
+        super(ResNeXtUnit, self).__init__()
+        self.resize_identity = (in_channels != out_channels) or (stride != 1)
+        self.body = ResNeXtBottleneck(in_channels=in_channels, out_channels=out_channels, stride=stride, cardinality=cardinality, bottleneck_width=bottleneck_width)
+        if self.resize_identity:
+            self.identity_conv = conv1x1_block(in_channels=in_channels, out_channels=out_channels, stride=stride, activation=None)
+        self.activ = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        if self.resize_identity:
+            identity = self.identity_conv(x)
+        else:
+            identity = x
+        x = self.body(x)
+        x = x + identity
+        x = self.activ(x)
+        return x
+
+class RegNetxBackbone(RegNet):
+    def __init__(self, extra_args=[]):
+        yaml_cfg = extra_args[0]
+        _C.merge_from_file(yaml_cfg)
+#         _C['NUM_GPUS'] = 0
+        super(RegNetxBackbone, self).__init__()
+        if "1.6GF" in yaml_cfg:
+            self.channels = [72, 168, 408, 912]
+        elif "800MF" in yaml_cfg:
+            self.channels = [64, 128, 288, 672]
+        self.lrs = [2, 2, 2, 2]
+        self.channels_per_layers = [[ci] * li for (ci, li) in zip(self.channels, self.lrs)]
+        self.backbone_modules = [m for m in self.modules() if isinstance(m, nn.Conv2d)]
+        self.children_blocks =  [i for i in self.children()]
+        self.layers = self.children_blocks[1:-1]
+
+    def init_backbone(self, path):
+        state_dict = torch.load(path)
+        import ipdb; ipdb.set_trace()
+        self.load_state_dict(state_dict['model_state'])
+
+    def forward(self, x):
+        x = self.stem(x)
+        outs = []
+        for layer in self.layers:
+            x = layer(x)
+            outs.append(x)
+        return tuple(outs)
+
+    def _make_layer(self, i, in_channels):
+        layer_list = []
+        channels_per_stage = self.channels_per_layers[i]
+        stage = nn.Sequential()
+        for j, out_channels in enumerate(channels_per_stage):
+            stride = 2 if (j == 0) and (i != 0) else 1
+            stage.add_module("unit{}".format(j + 1), ResNeXtUnit(in_channels=in_channels, out_channels=out_channels, stride=stride, cardinality=32, bottleneck_width=4))
+            in_channels = out_channels
+        self.layers.append(stage)
+
+    def add_layer(self, conv_channels=1024, downsample=2, depth=1, block=Bottleneck):
+        """ Add a downsample layer to the backbone as per what SSD does. """
+        self._make_layer(block, conv_channels // block.expansion, blocks=depth, stride=downsample)
+
+
+class ResNextBackbone(nn.Module):
+
+    def __init__(self, extra_args=[]):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        self.num_base_layers = 4
+        self.channels = [256, 512, 1024, 2048]
+        self.lrs = [2, 2, 2, 2]
+        self.channels_per_layers = [[ci] * li for (ci, li) in zip(self.channels, self.lrs)]
+        self._preconv = self.conv_bn()
+        self._make_layer(0, 64)
+        self._make_layer(1, 256)
+        self._make_layer(2, 512)
+        self._make_layer(3, 1024)
+        self.backbone_modules = [m for m in self.modules() if isinstance(m, nn.Conv2d)]
+
+    def conv_bn(self):
+        return nn.Sequential(nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
+                             nn.BatchNorm2d(64),
+                             nn.ReLU(inplace=True),
+                             nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+
+    def _make_layer(self, i, in_channels):
+        layer_list = []
+        channels_per_stage = self.channels_per_layers[i]
+        stage = nn.Sequential()
+        for j, out_channels in enumerate(channels_per_stage):
+            stride = 2 if (j == 0) and (i != 0) else 1
+            stage.add_module("unit{}".format(j + 1), ResNeXtUnit(in_channels=in_channels, out_channels=out_channels, stride=stride, cardinality=32, bottleneck_width=4))
+            in_channels = out_channels
+        self.layers.append(stage)
+
+    def init_backbone(self, path):
+        state_dict = torch.load(path)
+        state_dict = OrderedDict([(self.transform_key(k), v) for k,v in state_dict.items()])
+        self.load_state_dict(state_dict, strict=False)
+
+    def forward(self, x):
+        x = self._preconv(x)
+        outs = []
+        for layer in self.layers:
+            x = layer(x)
+            outs.append(x)
+        return tuple(outs)
+
+    def add_layer(self, conv_channels=2048, downsample=2):
+        self._make_layer(1, [(conv_channels, conv_channels, downsample)])
+
+    def transform_key(self, k):
+        vals = k.split('.')
+        if len(vals) > 3:
+            if 'init_block' in k:
+                return '_preconv.%s.%s' % (int(vals[2]=='conv'), vals[4])
+            elif vals[0] == 'features':
+                if vals[1] == 'stage1' and len(vals) > 6:
+                    return 'layers.0.%s.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5], vals[6])
+                elif vals[1] == 'stage1' and len(vals) > 5:
+                    return 'layers.0.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5])
+                elif vals[1] == 'stage2' and len(vals) > 6:
+                    return 'layers.1.%s.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5], vals[6])
+                elif vals[1] == 'stage2' and len(vals) > 5:
+                    return 'layers.1.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5])
+                elif vals[1] == 'stage3' and len(vals) > 6:
+                    return 'layers.2.%s.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5], vals[6])
+                elif vals[1] == 'stage3' and len(vals) > 5:
+                    return 'layers.2.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5])
+                if vals[1] == 'stage4' and len(vals) > 6:
+                    return 'layers.3.%s.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5], vals[6])
+                elif vals[1] == 'stage4' and len(vals) > 5:
+                    return 'layers.3.%s.%s.%s.%s' % (vals[2], vals[3], vals[4], vals[5])
+                else:
+                    return k
+            else:
+                return k
+        else:
+            return k
 
 
 class ResNetBackboneGN(ResNetBackbone):
 
     def __init__(self, layers, num_groups=32):
         super().__init__(layers, norm_layer=lambda x: nn.GroupNorm(num_groups, x))
-
+ 
     def init_backbone(self, path):
         """ The path here comes from detectron. So we load it differently. """
         with open(path, 'rb') as f:
@@ -442,8 +684,6 @@ class VGGBackbone(nn.Module):
         self.in_channels = conv_channels*2
         self.channels.append(self.in_channels)
         self.layers.append(layer)
-        
-                
 
 
 def construct_backbone(cfg):

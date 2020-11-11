@@ -1,4 +1,4 @@
-from backbone import ResNetBackbone, VGGBackbone, ResNetBackboneGN, DarkNetBackbone
+from backbone import ResNetBackbone, VGGBackbone, ResNetBackboneGN, DarkNetBackbone, ResNextBackbone, RegNetxBackbone
 from math import sqrt
 import torch
 
@@ -260,6 +260,26 @@ resnet50_backbone = resnet101_backbone.copy({
     'transform': resnet_transform,
 })
 
+resnext26_backbone = resnet50_backbone.copy({
+    'name': 'ResNext26_32x4d',
+    'path': 'resnext26_32x4d-0746-1011ac35.pth',
+    'type': ResNextBackbone,
+})
+
+regnetx_800MF_backbone = resnet50_backbone.copy({
+    'name': 'Regnetx_800MF',
+    'path': 'RegNetX-800MF_dds_8gpu.pyth',
+    'args': '(weights/RegNetX-800MF_dds_8gpu.yaml',),
+    'type': RegNetxBackbone,
+})
+
+regnetx_1600MF_backbone = resnet50_backbone.copy({
+    'name': 'Regnetx_1.6GF',
+    'path': 'RegNetX-1.6GF_dds_8gpu.pyth',
+    'args': ('weights/RegNetX-1.6GF_dds_8gpu.yaml',),
+    'type': RegNetxBackbone,
+})
+
 resnet50_dcnv2_backbone = resnet50_backbone.copy({
     'name': 'ResNet50_DCNv2',
     'args': ([3, 4, 6, 3], [0, 4, 6, 3]),
@@ -389,7 +409,7 @@ fpn_base = Config({
     'num_features': 256,
 
     # The upsampling mode used
-    'interpolation_mode': 'bilinear',
+    'interpolation_mode': 'nearest',
 
     # The number of extra layers to be produced by downsampling starting at P5
     'num_downsample': 1,
@@ -499,8 +519,8 @@ coco_base_config = Config({
     'augment_random_rot90': False,
 
     # Discard detections with width and height smaller than this (in absolute width and height)
-    'discard_box_width': 4 / 550,
-    'discard_box_height': 4 / 550,
+    'discard_box_width': 4 / 512,
+    'discard_box_height': 4 / 512,
 
     # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
     # Note: any additional batch norm layers after the backbone will not be frozen.
@@ -661,7 +681,7 @@ yolact_base_config = coco_base_config.copy({
     'num_classes': len(coco2017_dataset.class_names) + 1,
 
     # Image Size
-    'max_size': 550,
+    'max_size': 512,
     
     # Training params
     'lr_steps': (280000, 600000, 700000, 750000),
@@ -688,7 +708,7 @@ yolact_base_config = coco_base_config.copy({
     'mask_type': mask_type.lincomb,
     'mask_alpha': 6.125,
     'mask_proto_src': 0,
-    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(None, -2, {}), (256, 3, {'padding': 1})] + [(32, 1, {})],
+    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(256, -4, {'padding': 2, 'stride': 2}), (256, 3, {'padding': 1})] + [(32, 1, {})],
     'mask_proto_normalize_emulate_roi_pooling': True,
 
     # Other stuff
@@ -742,14 +762,37 @@ yolact_resnet50_config = yolact_base_config.copy({
     'backbone': resnet50_backbone.copy({
         'selected_layers': list(range(1, 4)),
         
-        'pred_scales': yolact_base_config.backbone.pred_scales,
-        'pred_aspect_ratios': yolact_base_config.backbone.pred_aspect_ratios,
+        'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
         'use_pixel_scales': True,
         'preapply_sqrt': False,
-        'use_square_anchors': True, # This is for backward compatability with a bug
+        'use_square_anchors': False, # This is for backward compatability with a bug
     }),
 })
 
+yolact_resnext26_config = yolact_base_config.copy({
+    'name': 'yolact_resnext26',
+    'backbone': resnext26_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': False, # This is for backward compatability with a bug
+    }),
+})
+
+yolact_regnetx_800MF_config = yolact_base_config.copy({
+    'name': 'yolact_regnetx_800MF',
+    'backbone': regnetx_800MF_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': False, # This is for backward compatability with a bug
+    }),
+})
 
 yolact_resnet50_pascal_config = yolact_resnet50_config.copy({
     'name': None, # Will default to yolact_resnet50_pascal
