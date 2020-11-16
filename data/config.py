@@ -269,7 +269,7 @@ resnext26_backbone = resnet50_backbone.copy({
 regnetx_800MF_backbone = resnet50_backbone.copy({
     'name': 'Regnetx_800MF',
     'path': 'RegNetX-800MF_dds_8gpu.pyth',
-    'args': '(weights/RegNetX-800MF_dds_8gpu.yaml',),
+    'args': ('weights/RegNetX-800MF_dds_8gpu.yaml',),
     'type': RegNetxBackbone,
 })
 
@@ -785,6 +785,18 @@ yolact_resnext26_config = yolact_base_config.copy({
 yolact_regnetx_800MF_config = yolact_base_config.copy({
     'name': 'yolact_regnetx_800MF',
     'backbone': regnetx_800MF_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': False, # This is for backward compatability with a bug
+    }),
+})
+
+yolact_regnetx_1600MF_config = yolact_base_config.copy({
+    'name': 'yolact_regnetx_1600MF',
+    'backbone': regnetx_1600MF_backbone.copy({
         'selected_layers': list(range(1, 4)),
         'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
         'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,

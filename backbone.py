@@ -282,7 +282,7 @@ class ResNeXtUnit(nn.Module):
 
 class RegNetxBackbone(RegNet):
     def __init__(self, extra_args=[]):
-        yaml_cfg = extra_args[0]
+        yaml_cfg = extra_args
         _C.merge_from_file(yaml_cfg)
 #         _C['NUM_GPUS'] = 0
         super(RegNetxBackbone, self).__init__()
@@ -298,7 +298,6 @@ class RegNetxBackbone(RegNet):
 
     def init_backbone(self, path):
         state_dict = torch.load(path)
-        import ipdb; ipdb.set_trace()
         self.load_state_dict(state_dict['model_state'])
 
     def forward(self, x):
@@ -673,7 +672,7 @@ class VGGBackbone(nn.Module):
             conv_channels, downsample = self.extra_args.pop()
         
         padding = 1 if downsample > 1 else 0
-        
+
         layer = nn.Sequential(
             nn.Conv2d(self.in_channels, conv_channels, kernel_size=1),
             nn.ReLU(inplace=True),
