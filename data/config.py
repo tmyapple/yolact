@@ -28,6 +28,30 @@ COLORS = ((244,  67,  54),
 MEANS = (103.94, 116.78, 123.68)
 STD   = (57.38, 57.12, 58.40)
 
+SBX_CLASSES = ('oatmeal', 'jelly_jar', 'maple_syrup', 'cracker', 'hibiscus_beer')
+SBX_LABELMAP = {0:1, 1:2, 2:3, 3:4, 4:5}
+
+D2S_CLASSES = ('adelholzener_alpenquelle_classic_075', 'adelholzener_alpenquelle_naturell_075',
+                   'adelholzener_classic_bio_apfelschorle_02', 'adelholzener_classic_naturell_02',
+                   'adelholzener_gourmet_mineralwasser_02', 'augustiner_lagerbraeu_hell_05',
+                   'augustiner_weissbier_05', 'coca_cola_05', 'coca_cola_light_05',
+                   'suntory_gokuri_lemonade', 'tegernseer_hell_03', 'corny_nussvoll',
+                   'corny_nussvoll_single', 'corny_schoko_banane', 'corny_schoko_banane_single',
+                   'dr_oetker_vitalis_knuspermuesli_klassisch', 'koelln_muesli_fruechte',
+                   'koelln_muesli_schoko', 'caona_cocoa', 'cocoba_cocoa', 'cafe_wunderbar_espresso',
+                   'douwe_egberts_professional_ground_coffee', 'gepa_bio_caffe_crema',
+                   'gepa_italienischer_bio_espresso', 'apple_braeburn_bundle', 'apple_golden_delicious',
+                   'apple_granny_smith', 'apple_red_boskoop', 'avocado', 'banana_bundle', 'banana_single',
+                   'grapes_green_sugraone_seedless', 'grapes_sweet_celebration_seedless', 'kiwi',
+                   'orange_single', 'oranges', 'pear', 'clementine', 'clementine_single',
+                   'pasta_reggia_elicoidali', 'pasta_reggia_fusilli', 'pasta_reggia_spaghetti',
+                   'franken_tafelreiniger', 'pelikan_tintenpatrone_canon', 'ethiquable_gruener_tee_ceylon',
+                   'gepa_bio_und_fair_fencheltee', 'gepa_bio_und_fair_kamillentee',
+                   'gepa_bio_und_fair_kraeuterteemischung', 'gepa_bio_und_fair_pfefferminztee',
+                   'gepa_bio_und_fair_rooibostee', 'kilimanjaro_tea_earl_grey', 'cucumber', 'carrot',
+                   'corn_salad', 'lettuce', 'vine_tomatoes', 'roma_vine_tomatoes', 'rocket',
+                   'salad_iceberg', 'zucchini')
+
 COCO_CLASSES = ('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
                 'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
                 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog',
@@ -125,6 +149,45 @@ dataset_base = Config({
     # COCO class ids aren't sequential, so this is a bandage fix. If your ids aren't sequential,
     # provide a map from category_id -> index in class_names + 1 (the +1 is there because it's 1-indexed).
     # If not specified, this just assumes category ids start at 1 and increase sequentially.
+    'label_map': None
+})
+
+sbxrobotics = dataset_base.copy({
+    'name': 'SBXRobotics',
+    
+    'train_images': './dataset/SBX-kitchen-V1_2021_05_05',
+    'train_info': './dataset/SBX-kitchen-V1_2021_05_05/COCO_SBX_2021_05_05.json',
+    
+    'valid_images': './dataset/sbx-kitchen-table-validation/color',
+    'valid_info': './dataset/sbx-kitchen-table-validation/sbx-kitchen-table-coco.json',
+
+    'class_names': SBX_CLASSES,
+    'label_map': SBX_LABELMAP
+})
+
+d2s_dataset = dataset_base.copy({
+    'name': 'D2S',
+    
+    'train_images': './data_d2s/d2s/images',
+    'train_info': './data_d2s/d2s/annotations/D2S_training.json',
+    
+    'train_images': './data_d2s/d2s/images',
+    'train_info': './data_d2s/d2s/annotations/D2S_validation.json',
+
+    'class_names': D2S_CLASSES,
+    'label_map': None
+})
+
+d2s_dataset_aug = dataset_base.copy({
+    'name': 'D2S',
+    
+    'train_images': './data_d2s/d2s/images',
+    'train_info': './data_d2s/d2s/annotations/D2S_augmented.json',
+    
+    'valid_images': './data_d2s/d2s/images',
+    'valid_info': './data_d2s/d2s/annotations/D2S_validation.json',
+
+    'class_names': D2S_CLASSES,
     'label_map': None
 })
 
@@ -264,6 +327,13 @@ resnext26_backbone = resnet50_backbone.copy({
     'name': 'ResNext26_32x4d',
     'path': 'resnext26_32x4d-0746-1011ac35.pth',
     'type': ResNextBackbone,
+})
+
+regnetx_600MF_backbone = resnet50_backbone.copy({
+    'name': 'Regnetx_600MF',
+    'path': 'RegNetX-600MF_dds_8gpu.pyth',
+    'args': ('weights/RegNetX-600MF_dds_8gpu.yaml',),
+    'type': RegNetxBackbone,
 })
 
 regnetx_800MF_backbone = resnet50_backbone.copy({
@@ -677,8 +747,10 @@ yolact_base_config = coco_base_config.copy({
     'name': 'yolact_base',
 
     # Dataset stuff
-    'dataset': coco2017_dataset,
-    'num_classes': len(coco2017_dataset.class_names) + 1,
+    # 'dataset': coco2017_dataset,
+    # 'num_classes': len(coco2017_dataset.class_names) + 1,
+    'dataset': sbxrobotics,
+    'num_classes': len(sbxrobotics.class_names) + 1,    
 
     # Image Size
     'max_size': 512,
@@ -773,6 +845,20 @@ yolact_resnet50_config = yolact_base_config.copy({
 yolact_resnext26_config = yolact_base_config.copy({
     'name': 'yolact_resnext26',
     'backbone': resnext26_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': False, # This is for backward compatability with a bug
+    }),
+})
+
+yolact_regnetx_600MF_config = yolact_base_config.copy({
+    'name': 'yolact_regnetx_600MF',
+    'lr_steps': (15000, 30000, 40000, 50000),
+    'max_iter': 60000,
+    'backbone': regnetx_600MF_backbone.copy({
         'selected_layers': list(range(1, 4)),
         'pred_scales': [[i * 2 ** (j / 3.0) for j in range(3)] for i in [24, 48, 96, 192, 384]],
         'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,

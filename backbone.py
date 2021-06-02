@@ -290,6 +290,8 @@ class RegNetxBackbone(RegNet):
             self.channels = [72, 168, 408, 912]
         elif "800MF" in yaml_cfg:
             self.channels = [64, 128, 288, 672]
+        elif "600MF" in yaml_cfg:
+            self.channels = [48, 96, 240, 528]
         self.lrs = [2, 2, 2, 2]
         self.channels_per_layers = [[ci] * li for (ci, li) in zip(self.channels, self.lrs)]
         self.backbone_modules = [m for m in self.modules() if isinstance(m, nn.Conv2d)]
