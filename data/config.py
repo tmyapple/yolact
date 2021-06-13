@@ -52,6 +52,30 @@ D2S_CLASSES = ('adelholzener_alpenquelle_classic_075', 'adelholzener_alpenquelle
                    'corn_salad', 'lettuce', 'vine_tomatoes', 'roma_vine_tomatoes', 'rocket',
                    'salad_iceberg', 'zucchini')
 
+D2S_CLASSES_17 = ('apple_golden_delicious', 'apple_granny_smith', 'apple_red_boskoop', 'avocado', 
+                  'banana_bundle', 'banana_single', 'grapes_green_sugraone_seedless',
+                  'grapes_sweet_celebration_seedless', 'kiwi',
+                  'orange_single', 'oranges', 'pear', 'clementine', 'clementine_single',
+                  'cucumber', 'carrot', 'lettuce')
+
+D2S_17_MAP = {26: 1,
+              27: 2,
+              28: 3,
+              29: 4,
+              30: 5,
+              31: 6,
+              32: 7,
+              33: 8,
+              34: 9,
+              35: 10,
+              36: 11,
+              37: 12,
+              38: 13,
+              39: 14,
+              52: 15,
+              53: 16,
+              55: 17}
+
 COCO_CLASSES = ('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
                 'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
                 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog',
@@ -189,6 +213,19 @@ d2s_dataset_aug = dataset_base.copy({
 
     'class_names': D2S_CLASSES,
     'label_map': None
+})
+
+d2s_dataset_aug_17 = dataset_base.copy({
+    'name': 'D2S',
+    
+    'train_images': './dataset/images',
+    'train_info': './dataset/annotations/D2S_augmented_17.json',
+    
+    'valid_images': './dataset/images',
+    'valid_info': './dataset/annotations/D2S_validation_17.json',
+
+    'class_names': D2S_CLASSES_17,
+    'label_map': D2S_17_MAP
 })
 
 coco2014_dataset = dataset_base.copy({
@@ -749,8 +786,10 @@ yolact_base_config = coco_base_config.copy({
     # Dataset stuff
     # 'dataset': coco2017_dataset,
     # 'num_classes': len(coco2017_dataset.class_names) + 1,
-    'dataset': sbxrobotics,
-    'num_classes': len(sbxrobotics.class_names) + 1,    
+    # 'dataset': sbxrobotics,
+    # 'num_classes': len(sbxrobotics.class_names) + 1,    
+    'dataset': d2s_dataset_aug_17,
+    'num_classes': len(d2s_dataset_aug_17.class_names) + 1,    
 
     # Image Size
     'max_size': 512,
